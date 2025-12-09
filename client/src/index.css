@@ -1,0 +1,30 @@
+/* Global Reset */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Segoe UI", sans-serif;
+  background-color: #ffffff;
+  color: #1a1a1a;
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+/* Loading state */
+.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  font-size: 18px;
+  color: #64748b;
+}
+
+/* Admin global styles */
+.admin-container {
+  min-height: 100vh;
+  background: #f8f9fa;
+}

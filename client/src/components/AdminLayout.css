@@ -1,0 +1,156 @@
+.admin-layout {
+  display: flex;
+  min-height: 100vh;
+  background: #f8f9fa;
+}
+
+.admin-sidebar {
+  width: 260px;
+  background: #1a1a2e;
+  color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  height: 100vh;
+  left: 0;
+  top: 0;
+}
+
+.sidebar-header {
+  padding: 24px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-logo {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+}
+
+.sidebar-nav {
+  flex: 1;
+  padding: 20px 12px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  color: rgba(255, 255, 255, 0.7);
+  text-decoration: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 500;
+  margin-bottom: 4px;
+  transition: all 0.2s ease;
+}
+
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.nav-item.active {
+  background: #1E80FF;
+  color: #ffffff;
+}
+
+.nav-icon {
+  font-size: 18px;
+}
+
+.sidebar-footer {
+  padding: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.user-avatar {
+  width: 40px;
+  height: 40px;
+  background: #1E80FF;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.user-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.user-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.user-email {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.logout-btn {
+  width: 100%;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.logout-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.admin-main {
+  flex: 1;
+  margin-left: 260px;
+  padding: 32px;
+  min-height: 100vh;
+}
+
+@media (max-width: 768px) {
+  .admin-sidebar {
+    width: 70px;
+  }
+
+  .sidebar-logo,
+  .user-details,
+  .nav-item span:not(.nav-icon) {
+    display: none;
+  }
+
+  .nav-item {
+    justify-content: center;
+    padding: 14px;
+  }
+
+  .nav-icon {
+    font-size: 20px;
+  }
+
+  .user-info {
+    justify-content: center;
+  }
+
+  .admin-main {
+    margin-left: 70px;
+  }
+}
