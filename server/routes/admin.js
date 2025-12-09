@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const { body, validationResult } = require('express-validator');
-const { dbRun, dbGet, dbAll } = require('../config/database');
+const { supabase, db } = require('../config/supabase');
 const { authenticateToken, generateToken } = require('../middleware/auth');
 
 // POST /api/admin/login - Admin login
@@ -19,7 +19,7 @@ router.post('/login', [
     const { email, password } = req.body;
 
     // Find admin user
-    const admin = await dbGet('SELECT * FROM admin_users WHERE email = ?', [email]);
+    const admin = await db.getOne('admin_users', { email });
 
     if (!admin) {
       return res.status(401).json({ error: '이메일 또는 비밀번호가 올바르지 않습니다.' });
@@ -53,9 +53,13 @@ router.post('/login', [
 // GET /api/admin/me - Get current admin user
 router.get('/me', authenticateToken, async (req, res) => {
   try {
-    const admin = await dbGet('SELECT id, email, name, created_at FROM admin_users WHERE id = ?', [req.user.id]);
+    const { data: admin, error } = await supabase
+      .from('admin_users')
+      .select('id, email, name, created_at')
+      .eq('id', req.user.id)
+      .single();
 
-    if (!admin) {
+    if (error || !admin) {
       return res.status(404).json({ error: '사용자를 찾을 수 없습니다.' });
     }
 
@@ -81,7 +85,7 @@ router.post('/register', authenticateToken, [
     const { email, password, name } = req.body;
 
     // Check if email already exists
-    const existing = await dbGet('SELECT id FROM admin_users WHERE email = ?', [email]);
+    const existing = await db.getOne('admin_users', { email });
     if (existing) {
       return res.status(400).json({ error: '이미 등록된 이메일입니다.' });
     }
@@ -91,15 +95,16 @@ router.post('/register', authenticateToken, [
     const passwordHash = await bcrypt.hash(password, salt);
 
     // Create admin
-    const result = await dbRun(
-      'INSERT INTO admin_users (email, password_hash, name) VALUES (?, ?, ?)',
-      [email, passwordHash, name]
-    );
+    const result = await db.insert('admin_users', {
+      email,
+      password_hash: passwordHash,
+      name
+    });
 
     res.status(201).json({
       success: true,
       message: '관리자 계정이 생성되었습니다.',
-      userId: result.lastID
+      userId: result.id
     });
   } catch (error) {
     console.error('Register error:', error);
@@ -121,7 +126,7 @@ router.put('/password', authenticateToken, [
     const { currentPassword, newPassword } = req.body;
 
     // Get current admin
-    const admin = await dbGet('SELECT * FROM admin_users WHERE id = ?', [req.user.id]);
+    const admin = await db.getById('admin_users', req.user.id);
 
     // Verify current password
     const isMatch = await bcrypt.compare(currentPassword, admin.password_hash);
@@ -134,10 +139,9 @@ router.put('/password', authenticateToken, [
     const newPasswordHash = await bcrypt.hash(newPassword, salt);
 
     // Update password
-    await dbRun(
-      'UPDATE admin_users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [newPasswordHash, req.user.id]
-    );
+    await db.update('admin_users', req.user.id, {
+      password_hash: newPasswordHash
+    });
 
     res.json({ success: true, message: '비밀번호가 변경되었습니다.' });
   } catch (error) {
@@ -149,7 +153,12 @@ router.put('/password', authenticateToken, [
 // GET /api/admin/users - Get all admin users
 router.get('/users', authenticateToken, async (req, res) => {
   try {
-    const admins = await dbAll('SELECT id, email, name, created_at FROM admin_users ORDER BY created_at DESC');
+    const { data: admins, error } = await supabase
+      .from('admin_users')
+      .select('id, email, name, created_at')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
     res.json(admins);
   } catch (error) {
     console.error('Get users error:', error);

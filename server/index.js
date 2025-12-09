@@ -4,23 +4,17 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 
-const { initDatabase } = require('./config/database');
 const leadsRoutes = require('./routes/leads');
 const adminRoutes = require('./routes/admin');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Create necessary directories
+// Create uploads directory
 const uploadsDir = path.join(__dirname, 'uploads');
-const dataDir = path.join(__dirname, 'data');
 
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
 }
 
 // Middleware
@@ -64,20 +58,18 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: '서버 오류가 발생했습니다.' });
 });
 
-// Initialize database and start server
-const startServer = async () => {
-  try {
-    await initDatabase();
-    console.log('Database initialized successfully');
-
-    app.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
-      console.log(`API available at http://localhost:${PORT}/api`);
-    });
-  } catch (error) {
-    console.error('Failed to start server:', error);
-    process.exit(1);
+// Start server
+const startServer = () => {
+  // Check Supabase environment variables
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.warn('Warning: Supabase environment variables not set!');
+    console.warn('Please set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in your .env file');
   }
+
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+    console.log(`API available at http://localhost:${PORT}/api`);
+  });
 };
 
 startServer();

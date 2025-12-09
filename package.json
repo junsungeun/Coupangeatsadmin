@@ -9,10 +9,12 @@
     "server": "nodemon server/index.js",
     "client": "cd client && npm start",
     "install-all": "npm install && cd client && npm install",
-    "build": "cd client && npm run build",
-    "seed": "node server/scripts/seed.js"
+    "build": "cd client && npm install && npm run build",
+    "seed": "node server/scripts/seed.js",
+    "vercel-build": "cd client && npm install && npm run build"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.87.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -20,7 +22,6 @@
     "express-validator": "^7.0.1",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
-    "sqlite3": "^5.1.6",
     "uuid": "^9.0.0"
   },
   "devDependencies": {

@@ -5,7 +5,7 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
 const { body, validationResult } = require('express-validator');
-const { dbRun, dbGet, dbAll } = require('../config/database');
+const { supabase, db } = require('../config/supabase');
 const { authenticateToken } = require('../middleware/auth');
 
 // Configure multer for file uploads
@@ -61,16 +61,20 @@ router.post('/consult', consultValidation, async (req, res) => {
 
     const { name, store_name, phone, email, store_link } = req.body;
 
-    const result = await dbRun(
-      `INSERT INTO leads (type, name, store_name, phone, email, store_link, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      ['consult', name, store_name, phone, email || null, store_link || null, '신규']
-    );
+    const result = await db.insert('leads', {
+      type: 'consult',
+      name,
+      store_name,
+      phone,
+      email: email || null,
+      store_link: store_link || null,
+      status: '신규'
+    });
 
     res.status(201).json({
       success: true,
       message: '문의가 접수되었습니다. 빠른 시일 내에 연락드리겠습니다.',
-      leadId: result.lastID
+      leadId: result.id
     });
   } catch (error) {
     console.error('Consult submission error:', error);
@@ -112,23 +116,24 @@ router.post('/direct-join',
       const mailorderUrl = `/uploads/${files.mailorder_cert[0].filename}`;
       const bankCopyUrl = `/uploads/${files.bank_copy[0].filename}`;
 
-      const result = await dbRun(
-        `INSERT INTO leads (
-          type, name, store_name, phone, email,
-          biz_registration_url, mailorder_cert_url, bank_copy_url,
-          user_id, password_hash, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          'direct_join', name, store_name, phone, email,
-          bizRegUrl, mailorderUrl, bankCopyUrl,
-          user_id, passwordHash, '신규'
-        ]
-      );
+      const result = await db.insert('leads', {
+        type: 'direct_join',
+        name,
+        store_name,
+        phone,
+        email,
+        biz_registration_url: bizRegUrl,
+        mailorder_cert_url: mailorderUrl,
+        bank_copy_url: bankCopyUrl,
+        user_id,
+        password_hash: passwordHash,
+        status: '신규'
+      });
 
       res.status(201).json({
         success: true,
         message: '입점 신청이 접수되었습니다. 서류 검토 후 연락드리겠습니다.',
-        leadId: result.lastID
+        leadId: result.id
       });
     } catch (error) {
       console.error('Direct join submission error:', error);
@@ -142,25 +147,20 @@ router.post('/direct-join',
 // GET /api/leads/stats - Get lead statistics
 router.get('/stats', authenticateToken, async (req, res) => {
   try {
-    const today = new Date().toISOString().split('T')[0];
-
     const [total, consults, directJoins, todayLeads, statusCounts] = await Promise.all([
-      dbGet('SELECT COUNT(*) as count FROM leads'),
-      dbGet("SELECT COUNT(*) as count FROM leads WHERE type = 'consult'"),
-      dbGet("SELECT COUNT(*) as count FROM leads WHERE type = 'direct_join'"),
-      dbGet('SELECT COUNT(*) as count FROM leads WHERE DATE(created_at) = ?', [today]),
-      dbAll('SELECT status, COUNT(*) as count FROM leads GROUP BY status')
+      db.count('leads'),
+      db.count('leads', { type: 'consult' }),
+      db.count('leads', { type: 'direct_join' }),
+      db.countToday('leads'),
+      db.getStatusCounts('leads', 'status')
     ]);
 
     res.json({
-      total: total.count,
-      consults: consults.count,
-      directJoins: directJoins.count,
-      today: todayLeads.count,
-      byStatus: statusCounts.reduce((acc, curr) => {
-        acc[curr.status] = curr.count;
-        return acc;
-      }, {})
+      total,
+      consults,
+      directJoins,
+      today: todayLeads,
+      byStatus: statusCounts
     });
   } catch (error) {
     console.error('Stats error:', error);
@@ -180,60 +180,56 @@ router.get('/', authenticateToken, async (req, res) => {
       page = 1,
       limit = 20,
       sortBy = 'created_at',
-      sortOrder = 'DESC'
+      sortOrder = 'desc'
     } = req.query;
 
-    let sql = 'SELECT * FROM leads WHERE 1=1';
-    const params = [];
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const offset = (pageNum - 1) * limitNum;
 
+    // Build query
+    let query = supabase.from('leads').select('*', { count: 'exact' });
+
+    // Apply filters
     if (type && type !== 'all') {
-      sql += ' AND type = ?';
-      params.push(type);
+      query = query.eq('type', type);
     }
 
     if (status && status !== 'all') {
-      sql += ' AND status = ?';
-      params.push(status);
+      query = query.eq('status', status);
     }
 
     if (search) {
-      sql += ' AND (name LIKE ? OR store_name LIKE ? OR phone LIKE ? OR email LIKE ?)';
-      const searchPattern = `%${search}%`;
-      params.push(searchPattern, searchPattern, searchPattern, searchPattern);
+      query = query.or(`name.ilike.%${search}%,store_name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`);
     }
 
     if (startDate) {
-      sql += ' AND DATE(created_at) >= ?';
-      params.push(startDate);
+      query = query.gte('created_at', `${startDate}T00:00:00`);
     }
 
     if (endDate) {
-      sql += ' AND DATE(created_at) <= ?';
-      params.push(endDate);
+      query = query.lte('created_at', `${endDate}T23:59:59`);
     }
 
-    // Count total for pagination
-    const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as total');
-    const countResult = await dbGet(countSql, params);
-
-    // Add sorting and pagination
+    // Apply sorting
     const allowedSortColumns = ['created_at', 'name', 'store_name', 'status', 'type'];
     const sortColumn = allowedSortColumns.includes(sortBy) ? sortBy : 'created_at';
-    const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    query = query.order(sortColumn, { ascending: sortOrder === 'asc' });
 
-    sql += ` ORDER BY ${sortColumn} ${order}`;
-    sql += ' LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), (parseInt(page) - 1) * parseInt(limit));
+    // Apply pagination
+    query = query.range(offset, offset + limitNum - 1);
 
-    const leads = await dbAll(sql, params);
+    const { data: leads, error, count } = await query;
+
+    if (error) throw error;
 
     res.json({
       leads,
       pagination: {
-        total: countResult.total,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        totalPages: Math.ceil(countResult.total / parseInt(limit))
+        total: count,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(count / limitNum)
       }
     });
   } catch (error) {
@@ -245,9 +241,13 @@ router.get('/', authenticateToken, async (req, res) => {
 // GET /api/leads/recent - Get recent leads
 router.get('/recent', authenticateToken, async (req, res) => {
   try {
-    const leads = await dbAll(
-      'SELECT id, type, name, store_name, status, created_at FROM leads ORDER BY created_at DESC LIMIT 5'
-    );
+    const { data: leads, error } = await supabase
+      .from('leads')
+      .select('id, type, name, store_name, status, created_at')
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    if (error) throw error;
     res.json(leads);
   } catch (error) {
     console.error('Recent leads error:', error);
@@ -260,38 +260,35 @@ router.get('/export', authenticateToken, async (req, res) => {
   try {
     const { type, status, search, startDate, endDate } = req.query;
 
-    let sql = 'SELECT id, type, name, store_name, phone, email, store_link, status, business_type, created_at FROM leads WHERE 1=1';
-    const params = [];
+    let query = supabase
+      .from('leads')
+      .select('id, type, name, store_name, phone, email, store_link, status, business_type, created_at');
 
     if (type && type !== 'all') {
-      sql += ' AND type = ?';
-      params.push(type);
+      query = query.eq('type', type);
     }
 
     if (status && status !== 'all') {
-      sql += ' AND status = ?';
-      params.push(status);
+      query = query.eq('status', status);
     }
 
     if (search) {
-      sql += ' AND (name LIKE ? OR store_name LIKE ? OR phone LIKE ? OR email LIKE ?)';
-      const searchPattern = `%${search}%`;
-      params.push(searchPattern, searchPattern, searchPattern, searchPattern);
+      query = query.or(`name.ilike.%${search}%,store_name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`);
     }
 
     if (startDate) {
-      sql += ' AND DATE(created_at) >= ?';
-      params.push(startDate);
+      query = query.gte('created_at', `${startDate}T00:00:00`);
     }
 
     if (endDate) {
-      sql += ' AND DATE(created_at) <= ?';
-      params.push(endDate);
+      query = query.lte('created_at', `${endDate}T23:59:59`);
     }
 
-    sql += ' ORDER BY created_at DESC';
+    query = query.order('created_at', { ascending: false });
 
-    const leads = await dbAll(sql, params);
+    const { data: leads, error } = await query;
+
+    if (error) throw error;
 
     // Generate CSV
     const headers = ['ID', '타입', '이름', '매장명', '연락처', '이메일', '매장링크', '상태', '업종', '생성일'];
@@ -328,7 +325,7 @@ router.get('/export', authenticateToken, async (req, res) => {
 // GET /api/leads/:id - Get single lead
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
-    const lead = await dbGet('SELECT * FROM leads WHERE id = ?', [req.params.id]);
+    const lead = await db.getById('leads', req.params.id);
 
     if (!lead) {
       return res.status(404).json({ error: '리드를 찾을 수 없습니다.' });
@@ -338,16 +335,25 @@ router.get('/:id', authenticateToken, async (req, res) => {
     delete lead.password_hash;
 
     // Get activity logs
-    const logs = await dbAll(
-      `SELECT al.*, au.name as admin_name
-       FROM activity_logs al
-       LEFT JOIN admin_users au ON al.admin_id = au.id
-       WHERE al.lead_id = ?
-       ORDER BY al.created_at DESC`,
-      [req.params.id]
-    );
+    const { data: logs, error: logsError } = await supabase
+      .from('activity_logs')
+      .select(`
+        *,
+        admin_users (name)
+      `)
+      .eq('lead_id', req.params.id)
+      .order('created_at', { ascending: false });
 
-    res.json({ ...lead, activityLogs: logs });
+    if (logsError) {
+      console.error('Activity logs error:', logsError);
+    }
+
+    const activityLogs = (logs || []).map(log => ({
+      ...log,
+      admin_name: log.admin_users?.name || '관리자'
+    }));
+
+    res.json({ ...lead, activityLogs });
   } catch (error) {
     console.error('Get lead error:', error);
     res.status(500).json({ error: '리드 조회 중 오류가 발생했습니다.' });
@@ -361,34 +367,40 @@ router.put('/:id', authenticateToken, async (req, res) => {
     const leadId = req.params.id;
 
     // Get current lead
-    const currentLead = await dbGet('SELECT * FROM leads WHERE id = ?', [leadId]);
+    const currentLead = await db.getById('leads', leadId);
     if (!currentLead) {
       return res.status(404).json({ error: '리드를 찾을 수 없습니다.' });
     }
 
     // Update lead
-    await dbRun(
-      `UPDATE leads SET status = ?, business_type = ?, memo = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-      [status || currentLead.status, business_type || currentLead.business_type, memo, leadId]
-    );
+    const updatedLead = await db.update('leads', leadId, {
+      status: status || currentLead.status,
+      business_type: business_type !== undefined ? business_type : currentLead.business_type,
+      memo: memo !== undefined ? memo : currentLead.memo
+    });
 
     // Log status change
     if (status && status !== currentLead.status) {
-      await dbRun(
-        `INSERT INTO activity_logs (lead_id, admin_id, action, old_value, new_value) VALUES (?, ?, ?, ?, ?)`,
-        [leadId, req.user.id, 'status_change', currentLead.status, status]
-      );
+      await db.insert('activity_logs', {
+        lead_id: leadId,
+        admin_id: req.user.id,
+        action: 'status_change',
+        old_value: currentLead.status,
+        new_value: status
+      });
     }
 
     // Log memo update
     if (memo !== undefined && memo !== currentLead.memo) {
-      await dbRun(
-        `INSERT INTO activity_logs (lead_id, admin_id, action, old_value, new_value) VALUES (?, ?, ?, ?, ?)`,
-        [leadId, req.user.id, 'memo_update', currentLead.memo || '', memo || '']
-      );
+      await db.insert('activity_logs', {
+        lead_id: leadId,
+        admin_id: req.user.id,
+        action: 'memo_update',
+        old_value: currentLead.memo || '',
+        new_value: memo || ''
+      });
     }
 
-    const updatedLead = await dbGet('SELECT * FROM leads WHERE id = ?', [leadId]);
     delete updatedLead.password_hash;
 
     res.json({ success: true, lead: updatedLead });
@@ -401,11 +413,13 @@ router.put('/:id', authenticateToken, async (req, res) => {
 // DELETE /api/leads/:id - Delete lead
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {
-    const result = await dbRun('DELETE FROM leads WHERE id = ?', [req.params.id]);
+    const lead = await db.getById('leads', req.params.id);
 
-    if (result.changes === 0) {
+    if (!lead) {
       return res.status(404).json({ error: '리드를 찾을 수 없습니다.' });
     }
+
+    await db.delete('leads', req.params.id);
 
     res.json({ success: true, message: '리드가 삭제되었습니다.' });
   } catch (error) {
