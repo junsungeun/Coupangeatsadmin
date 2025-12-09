@@ -8,16 +8,8 @@ const { body, validationResult } = require('express-validator');
 const { supabase, db } = require('../config/supabase');
 const { authenticateToken } = require('../middleware/auth');
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, '..', 'uploads'));
-  },
-  filename: (req, file, cb) => {
-    const uniqueName = `${uuidv4()}${path.extname(file.originalname)}`;
-    cb(null, uniqueName);
-  }
-});
+// Configure multer for file uploads (memory storage for Vercel serverless)
+const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
   const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
@@ -82,6 +74,30 @@ router.post('/consult', consultValidation, async (req, res) => {
   }
 });
 
+// Helper function to upload file to Supabase Storage
+async function uploadToSupabase(file, folder) {
+  const fileName = `${folder}/${uuidv4()}${path.extname(file.originalname)}`;
+
+  const { data, error } = await supabase.storage
+    .from('documents')
+    .upload(fileName, file.buffer, {
+      contentType: file.mimetype,
+      upsert: false
+    });
+
+  if (error) {
+    console.error('Supabase upload error:', error);
+    throw error;
+  }
+
+  // Get public URL
+  const { data: urlData } = supabase.storage
+    .from('documents')
+    .getPublicUrl(fileName);
+
+  return urlData.publicUrl;
+}
+
 // POST /api/leads/direct-join - Submit direct join application
 router.post('/direct-join',
   upload.fields([
@@ -111,10 +127,16 @@ router.post('/direct-join',
       const salt = await bcrypt.genSalt(10);
       const passwordHash = await bcrypt.hash(password, salt);
 
-      // Get file URLs
-      const bizRegUrl = `/uploads/${files.biz_registration[0].filename}`;
-      const mailorderUrl = `/uploads/${files.mailorder_cert[0].filename}`;
-      const bankCopyUrl = `/uploads/${files.bank_copy[0].filename}`;
+      // Upload files to Supabase Storage
+      let bizRegUrl, mailorderUrl, bankCopyUrl;
+      try {
+        bizRegUrl = await uploadToSupabase(files.biz_registration[0], 'biz_registration');
+        mailorderUrl = await uploadToSupabase(files.mailorder_cert[0], 'mailorder_cert');
+        bankCopyUrl = await uploadToSupabase(files.bank_copy[0], 'bank_copy');
+      } catch (uploadError) {
+        console.error('File upload error:', uploadError);
+        return res.status(500).json({ error: '파일 업로드 중 오류가 발생했습니다.' });
+      }
 
       const result = await db.insert('leads', {
         type: 'direct_join',

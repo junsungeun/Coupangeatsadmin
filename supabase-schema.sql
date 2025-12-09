@@ -65,3 +65,12 @@ ON CONFLICT (email) DO NOTHING;
 -- Or generate a new hash using bcryptjs in Node.js:
 -- const bcrypt = require('bcryptjs');
 -- const hash = bcrypt.hashSync('your-password', 10);
+
+-- ============================================
+-- IMPORTANT: Storage Bucket Setup
+-- ============================================
+-- After running this SQL, you need to manually create a storage bucket in Supabase:
+-- 1. Go to Supabase Dashboard > Storage
+-- 2. Create a new bucket called "documents"
+-- 3. Set it to "Public" bucket (or configure RLS policies for private access)
+-- 4. The bucket will store: biz_registration, mailorder_cert, bank_copy files
