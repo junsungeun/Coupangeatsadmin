@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { uploadFile } from '../config/supabase';
+import { uploadFile, supabase } from '../config/supabase';
 import './Landing.css';
 
 const Landing = () => {
   const [activeTab, setActiveTab] = useState('consult');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [isComplete, setIsComplete] = useState(false);
 
   // Consult form state
   const [consultForm, setConsultForm] = useState({
@@ -31,23 +32,121 @@ const Landing = () => {
     mailorder_cert: null,
     bank_copy: null
   });
+  const [errors, setErrors] = useState({});
+
+  // Validation functions
+  const validatePhone = (phone) => {
+    const phoneRegex = /^010-\d{4}-\d{4}$/;
+    return phoneRegex.test(phone);
+  };
+
+  const validateEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  const validateFile = (file) => {
+    if (!file) return { valid: false, error: '파일을 선택해주세요.' };
+
+    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+    if (!allowedTypes.includes(file.type)) {
+      return { valid: false, error: 'PDF, JPG, PNG 파일만 업로드 가능합니다.' };
+    }
+
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    if (file.size > maxSize) {
+      return { valid: false, error: '파일 크기는 5MB 이하여야 합니다.' };
+    }
+
+    return { valid: true };
+  };
+
+  // Check for duplicate store name
+  const checkDuplicateStore = async (storeName) => {
+    const { data, error } = await supabase
+      .from('leads')
+      .select('id')
+      .eq('store_name', storeName)
+      .limit(1);
+
+    if (error) {
+      console.error('Store check error:', error);
+      return false;
+    }
+    return data && data.length > 0;
+  };
+
+  // Check for duplicate user ID
+  const checkDuplicateUserId = async (userId) => {
+    const { data, error } = await supabase
+      .from('leads')
+      .select('id')
+      .eq('user_id', userId)
+      .limit(1);
+
+    if (error) {
+      console.error('User ID check error:', error);
+      return false;
+    }
+    return data && data.length > 0;
+  };
 
   const handleConsultChange = (e) => {
     setConsultForm({ ...consultForm, [e.target.name]: e.target.value });
+    setErrors({ ...errors, [e.target.name]: '' });
   };
 
   const handleJoinChange = (e) => {
     setJoinForm({ ...joinForm, [e.target.name]: e.target.value });
+    setErrors({ ...errors, [e.target.name]: '' });
   };
 
   const handleFileChange = (e) => {
-    setFiles({ ...files, [e.target.name]: e.target.files[0] });
+    const file = e.target.files[0];
+    const fieldName = e.target.name;
+
+    if (file) {
+      const validation = validateFile(file);
+      if (!validation.valid) {
+        setErrors({ ...errors, [fieldName]: validation.error });
+        e.target.value = '';
+        return;
+      }
+    }
+
+    setFiles({ ...files, [fieldName]: file });
+    setErrors({ ...errors, [fieldName]: '' });
   };
 
   const handleConsultSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setMessage({ type: '', text: '' });
+    setErrors({});
+
+    // Validation
+    const newErrors = {};
+
+    if (!consultForm.name.trim()) {
+      newErrors.name = '이름을 입력해주세요.';
+    }
+    if (!consultForm.store_name.trim()) {
+      newErrors.store_name = '매장명을 입력해주세요.';
+    }
+    if (!consultForm.phone.trim()) {
+      newErrors.phone = '연락처를 입력해주세요.';
+    } else if (!validatePhone(consultForm.phone)) {
+      newErrors.phone = '연락처 형식이 올바르지 않습니다. (예: 010-1234-5678)';
+    }
+    if (consultForm.email && !validateEmail(consultForm.email)) {
+      newErrors.email = '이메일 형식이 올바르지 않습니다.';
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      setLoading(false);
+      return;
+    }
 
     try {
       const response = await axios.post('/api/leads/consult', consultForm);
@@ -73,24 +172,102 @@ const Landing = () => {
     e.preventDefault();
     setLoading(true);
     setMessage({ type: '', text: '' });
+    setErrors({});
+
+    // Validation
+    const newErrors = {};
+
+    if (!joinForm.name.trim()) {
+      newErrors.name = '이름을 입력해주세요.';
+    }
+    if (!joinForm.store_name.trim()) {
+      newErrors.store_name = '매장명을 입력해주세요.';
+    }
+    if (!joinForm.phone.trim()) {
+      newErrors.phone = '연락처를 입력해주세요.';
+    } else if (!validatePhone(joinForm.phone)) {
+      newErrors.phone = '연락처 형식이 올바르지 않습니다. (예: 010-1234-5678)';
+    }
+    if (!joinForm.email.trim()) {
+      newErrors.email = '이메일을 입력해주세요.';
+    } else if (!validateEmail(joinForm.email)) {
+      newErrors.email = '이메일 형식이 올바르지 않습니다.';
+    }
+    if (!joinForm.user_id.trim()) {
+      newErrors.user_id = '아이디를 입력해주세요.';
+    }
+    if (!joinForm.password.trim()) {
+      newErrors.password = '비밀번호를 입력해주세요.';
+    } else if (joinForm.password.length < 6) {
+      newErrors.password = '비밀번호는 6자 이상이어야 합니다.';
+    }
+
+    // File validation - 사업자등록증 필수
+    if (!files.biz_registration) {
+      newErrors.biz_registration = '사업자등록증을 첨부해주세요.';
+    }
+
+    // 선택 파일들 검증 (있으면 형식/크기 체크)
+    if (files.mailorder_cert) {
+      const validation = validateFile(files.mailorder_cert);
+      if (!validation.valid) {
+        newErrors.mailorder_cert = validation.error;
+      }
+    }
+    if (files.bank_copy) {
+      const validation = validateFile(files.bank_copy);
+      if (!validation.valid) {
+        newErrors.bank_copy = validation.error;
+      }
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      setLoading(false);
+      return;
+    }
 
     try {
-      // Check required files
-      if (!files.biz_registration || !files.mailorder_cert || !files.bank_copy) {
-        setMessage({ type: 'error', text: '필수 서류를 모두 첨부해주세요.' });
+      // 중복 체크
+      setMessage({ type: 'info', text: '중복 확인 중...' });
+
+      const [isDuplicateStore, isDuplicateUserId] = await Promise.all([
+        checkDuplicateStore(joinForm.store_name),
+        checkDuplicateUserId(joinForm.user_id)
+      ]);
+
+      if (isDuplicateStore) {
+        setErrors({ store_name: '이미 등록된 매장입니다.' });
+        setMessage({ type: 'error', text: '이미 등록된 매장입니다.' });
         setLoading(false);
         return;
       }
 
-      // Upload files directly to Supabase Storage
-      setMessage({ type: 'info', text: '파일 업로드 중...' });
-      const [bizRegUrl, mailorderUrl, bankCopyUrl] = await Promise.all([
-        uploadFile(files.biz_registration, 'biz_registration'),
-        uploadFile(files.mailorder_cert, 'mailorder_cert'),
-        uploadFile(files.bank_copy, 'bank_copy')
-      ]);
+      if (isDuplicateUserId) {
+        setErrors({ user_id: '이미 사용 중인 아이디입니다.' });
+        setMessage({ type: 'error', text: '이미 사용 중인 아이디입니다.' });
+        setLoading(false);
+        return;
+      }
 
-      // Send form data with file URLs to backend
+      // 파일 업로드
+      setMessage({ type: 'info', text: '파일 업로드 중...' });
+
+      const bizRegUrl = await uploadFile(files.biz_registration, 'biz_registration');
+
+      let mailorderUrl = null;
+      if (files.mailorder_cert) {
+        mailorderUrl = await uploadFile(files.mailorder_cert, 'mailorder_cert');
+      }
+
+      let bankCopyUrl = null;
+      if (files.bank_copy) {
+        bankCopyUrl = await uploadFile(files.bank_copy, 'bank_copy');
+      }
+
+      // API 요청
+      setMessage({ type: 'info', text: '신청서 제출 중...' });
+
       const response = await axios.post('/api/leads/direct-join', {
         ...joinForm,
         biz_registration_url: bizRegUrl,
@@ -98,7 +275,11 @@ const Landing = () => {
         bank_copy_url: bankCopyUrl
       });
 
+      // 성공 시 완료 화면으로
+      setIsComplete(true);
       setMessage({ type: 'success', text: response.data.message });
+
+      // 폼 초기화
       setJoinForm({
         name: '',
         store_name: '',
@@ -112,10 +293,10 @@ const Landing = () => {
         mailorder_cert: null,
         bank_copy: null
       });
-      // Reset file inputs
       document.querySelectorAll('input[type="file"]').forEach(input => {
         input.value = '';
       });
+
     } catch (error) {
       console.error('Submit error:', error);
       const errorMsg = error.response?.data?.errors?.[0]?.msg ||
@@ -127,6 +308,32 @@ const Landing = () => {
       setLoading(false);
     }
   };
+
+  // 완료 화면
+  if (isComplete) {
+    return (
+      <div className="landing">
+        <section className="complete-section">
+          <div className="container">
+            <div className="complete-card">
+              <div className="complete-icon">✅</div>
+              <h2>입점 신청 완료</h2>
+              <p>입점 신청이 접수되었습니다.<br />서류 검토 후 연락드리겠습니다.</p>
+              <button
+                className="btn-primary"
+                onClick={() => {
+                  setIsComplete(false);
+                  setMessage({ type: '', text: '' });
+                }}
+              >
+                돌아가기
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="landing">
@@ -597,7 +804,7 @@ const Landing = () => {
             {activeTab === 'consult' && (
               <form onSubmit={handleConsultSubmit}>
                 <div className="form-group">
-                  <label htmlFor="c_name">이름</label>
+                  <label htmlFor="c_name">이름 <span className="required">*</span></label>
                   <input
                     type="text"
                     id="c_name"
@@ -605,12 +812,13 @@ const Landing = () => {
                     placeholder="홍길동"
                     value={consultForm.name}
                     onChange={handleConsultChange}
-                    required
+                    className={errors.name ? 'error' : ''}
                   />
+                  {errors.name && <span className="error-text">{errors.name}</span>}
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="c_store">매장명</label>
+                  <label htmlFor="c_store">매장명 <span className="required">*</span></label>
                   <input
                     type="text"
                     id="c_store"
@@ -618,12 +826,13 @@ const Landing = () => {
                     placeholder="행복한 꽃집"
                     value={consultForm.store_name}
                     onChange={handleConsultChange}
-                    required
+                    className={errors.store_name ? 'error' : ''}
                   />
+                  {errors.store_name && <span className="error-text">{errors.store_name}</span>}
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="c_phone">연락처</label>
+                  <label htmlFor="c_phone">연락처 <span className="required">*</span></label>
                   <input
                     type="tel"
                     id="c_phone"
@@ -631,8 +840,9 @@ const Landing = () => {
                     placeholder="010-1234-5678"
                     value={consultForm.phone}
                     onChange={handleConsultChange}
-                    required
+                    className={errors.phone ? 'error' : ''}
                   />
+                  {errors.phone && <span className="error-text">{errors.phone}</span>}
                 </div>
 
                 <div className="form-group">
@@ -647,7 +857,9 @@ const Landing = () => {
                     placeholder="example@naver.com"
                     value={consultForm.email}
                     onChange={handleConsultChange}
+                    className={errors.email ? 'error' : ''}
                   />
+                  {errors.email && <span className="error-text">{errors.email}</span>}
                 </div>
 
                 <div className="form-group">
@@ -679,7 +891,7 @@ const Landing = () => {
             {activeTab === 'direct_join' && (
               <form onSubmit={handleJoinSubmit}>
                 <div className="form-group">
-                  <label htmlFor="j_name">이름</label>
+                  <label htmlFor="j_name">이름 <span className="required">*</span></label>
                   <input
                     type="text"
                     id="j_name"
@@ -687,12 +899,13 @@ const Landing = () => {
                     placeholder="홍길동"
                     value={joinForm.name}
                     onChange={handleJoinChange}
-                    required
+                    className={errors.name ? 'error' : ''}
                   />
+                  {errors.name && <span className="error-text">{errors.name}</span>}
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="j_store">매장명</label>
+                  <label htmlFor="j_store">매장명 <span className="required">*</span></label>
                   <input
                     type="text"
                     id="j_store"
@@ -700,12 +913,13 @@ const Landing = () => {
                     placeholder="행복한 꽃집"
                     value={joinForm.store_name}
                     onChange={handleJoinChange}
-                    required
+                    className={errors.store_name ? 'error' : ''}
                   />
+                  {errors.store_name && <span className="error-text">{errors.store_name}</span>}
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="j_phone">연락처</label>
+                  <label htmlFor="j_phone">연락처 <span className="required">*</span></label>
                   <input
                     type="tel"
                     id="j_phone"
@@ -713,12 +927,13 @@ const Landing = () => {
                     placeholder="010-1234-5678"
                     value={joinForm.phone}
                     onChange={handleJoinChange}
-                    required
+                    className={errors.phone ? 'error' : ''}
                   />
+                  {errors.phone && <span className="error-text">{errors.phone}</span>}
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="j_email">이메일 주소 (세금계산서 발행용)</label>
+                  <label htmlFor="j_email">이메일 <span className="required">*</span> (세금계산서 발행용)</label>
                   <input
                     type="email"
                     id="j_email"
@@ -726,27 +941,30 @@ const Landing = () => {
                     placeholder="example@naver.com"
                     value={joinForm.email}
                     onChange={handleJoinChange}
-                    required
+                    className={errors.email ? 'error' : ''}
                   />
+                  {errors.email && <span className="error-text">{errors.email}</span>}
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="j_biz">사업자등록증</label>
+                  <label htmlFor="j_biz">사업자등록증 <span className="required">*</span></label>
                   <input
                     type="file"
                     id="j_biz"
                     name="biz_registration"
                     accept=".jpg,.jpeg,.png,.pdf"
                     onChange={handleFileChange}
-                    required
+                    className={errors.biz_registration ? 'error' : ''}
                   />
+                  <span className="file-hint">PDF, JPG, PNG (최대 5MB)</span>
+                  {errors.biz_registration && <span className="error-text">{errors.biz_registration}</span>}
                 </div>
 
                 <div className="form-group">
                   <label htmlFor="j_mailorder">
                     통신판매신고증
                     <span style={{ fontWeight: 400, color: '#94a3b8' }}>
-                      {' '}(떡·수산·정육·반찬의 경우 영업신고증 추가 제출)
+                      {' '}(선택 - 떡·수산·정육·반찬의 경우 영업신고증 추가 제출)
                     </span>
                   </label>
                   <input
@@ -755,15 +973,17 @@ const Landing = () => {
                     name="mailorder_cert"
                     accept=".jpg,.jpeg,.png,.pdf"
                     onChange={handleFileChange}
-                    required
+                    className={errors.mailorder_cert ? 'error' : ''}
                   />
+                  <span className="file-hint">PDF, JPG, PNG (최대 5MB)</span>
+                  {errors.mailorder_cert && <span className="error-text">{errors.mailorder_cert}</span>}
                 </div>
 
                 <div className="form-group">
                   <label htmlFor="j_bankbook">
                     통장사본
                     <span style={{ fontWeight: 400, color: '#94a3b8' }}>
-                      {' '}(정산 계좌 · 토스뱅크 불가)
+                      {' '}(선택 - 정산 계좌 · 토스뱅크 불가)
                     </span>
                   </label>
                   <input
@@ -772,12 +992,14 @@ const Landing = () => {
                     name="bank_copy"
                     accept=".jpg,.jpeg,.png,.pdf"
                     onChange={handleFileChange}
-                    required
+                    className={errors.bank_copy ? 'error' : ''}
                   />
+                  <span className="file-hint">PDF, JPG, PNG (최대 5MB)</span>
+                  {errors.bank_copy && <span className="error-text">{errors.bank_copy}</span>}
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="j_userid">사용하실 아이디</label>
+                  <label htmlFor="j_userid">사용하실 아이디 <span className="required">*</span></label>
                   <input
                     type="text"
                     id="j_userid"
@@ -785,21 +1007,23 @@ const Landing = () => {
                     placeholder="아이디 입력"
                     value={joinForm.user_id}
                     onChange={handleJoinChange}
-                    required
+                    className={errors.user_id ? 'error' : ''}
                   />
+                  {errors.user_id && <span className="error-text">{errors.user_id}</span>}
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="j_password">사용하실 비밀번호</label>
+                  <label htmlFor="j_password">사용하실 비밀번호 <span className="required">*</span></label>
                   <input
                     type="password"
                     id="j_password"
                     name="password"
-                    placeholder="비밀번호 입력"
+                    placeholder="비밀번호 입력 (6자 이상)"
                     value={joinForm.password}
                     onChange={handleJoinChange}
-                    required
+                    className={errors.password ? 'error' : ''}
                   />
+                  {errors.password && <span className="error-text">{errors.password}</span>}
                 </div>
 
                 <button type="submit" className="form-submit" disabled={loading}>

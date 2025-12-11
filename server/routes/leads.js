@@ -91,10 +91,10 @@ router.post('/direct-join', directJoinValidation, async (req, res) => {
       biz_registration_url, mailorder_cert_url, bank_copy_url
     } = req.body;
 
-    // Check required file URLs
-    if (!biz_registration_url || !mailorder_cert_url || !bank_copy_url) {
+    // Check required file URL - only biz_registration is required
+    if (!biz_registration_url) {
       return res.status(400).json({
-        error: '필수 서류(사업자등록증, 통신판매신고증, 통장사본)를 모두 첨부해주세요.'
+        error: '사업자등록증을 첨부해주세요.'
       });
     }
 
@@ -109,8 +109,8 @@ router.post('/direct-join', directJoinValidation, async (req, res) => {
       phone,
       email,
       biz_registration_url,
-      mailorder_cert_url,
-      bank_copy_url,
+      mailorder_cert_url: mailorder_cert_url || null,
+      bank_copy_url: bank_copy_url || null,
       user_id,
       password_hash: passwordHash,
       status: '신규'
