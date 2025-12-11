@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import { uploadFile } from '../config/supabase';
 import './Landing.css';
 
 const Landing = () => {
@@ -74,19 +75,29 @@ const Landing = () => {
     setMessage({ type: '', text: '' });
 
     try {
-      const formData = new FormData();
-      Object.keys(joinForm).forEach(key => {
-        formData.append(key, joinForm[key]);
-      });
-      Object.keys(files).forEach(key => {
-        if (files[key]) {
-          formData.append(key, files[key]);
-        }
+      // Check required files
+      if (!files.biz_registration || !files.mailorder_cert || !files.bank_copy) {
+        setMessage({ type: 'error', text: '필수 서류를 모두 첨부해주세요.' });
+        setLoading(false);
+        return;
+      }
+
+      // Upload files directly to Supabase Storage
+      setMessage({ type: 'info', text: '파일 업로드 중...' });
+      const [bizRegUrl, mailorderUrl, bankCopyUrl] = await Promise.all([
+        uploadFile(files.biz_registration, 'biz_registration'),
+        uploadFile(files.mailorder_cert, 'mailorder_cert'),
+        uploadFile(files.bank_copy, 'bank_copy')
+      ]);
+
+      // Send form data with file URLs to backend
+      const response = await axios.post('/api/leads/direct-join', {
+        ...joinForm,
+        biz_registration_url: bizRegUrl,
+        mailorder_cert_url: mailorderUrl,
+        bank_copy_url: bankCopyUrl
       });
 
-      const response = await axios.post('/api/leads/direct-join', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
       setMessage({ type: 'success', text: response.data.message });
       setJoinForm({
         name: '',
@@ -106,8 +117,10 @@ const Landing = () => {
         input.value = '';
       });
     } catch (error) {
+      console.error('Submit error:', error);
       const errorMsg = error.response?.data?.errors?.[0]?.msg ||
         error.response?.data?.error ||
+        error.message ||
         '입점 신청 중 오류가 발생했습니다.';
       setMessage({ type: 'error', text: errorMsg });
     } finally {

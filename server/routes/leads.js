@@ -78,95 +78,57 @@ router.post('/consult', consultValidation, async (req, res) => {
   }
 });
 
-// Helper function to upload file to Supabase Storage
-async function uploadToSupabase(file, folder) {
-  const fileName = `${folder}/${uuidv4()}${path.extname(file.originalname)}`;
+// POST /api/leads/direct-join - Submit direct join application (receives file URLs from frontend)
+router.post('/direct-join', directJoinValidation, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
 
-  const { data, error } = await supabase.storage
-    .from('documents')
-    .upload(fileName, file.buffer, {
-      contentType: file.mimetype,
-      upsert: false
+    const {
+      name, store_name, phone, email, user_id, password,
+      biz_registration_url, mailorder_cert_url, bank_copy_url
+    } = req.body;
+
+    // Check required file URLs
+    if (!biz_registration_url || !mailorder_cert_url || !bank_copy_url) {
+      return res.status(400).json({
+        error: '필수 서류(사업자등록증, 통신판매신고증, 통장사본)를 모두 첨부해주세요.'
+      });
+    }
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(password, salt);
+
+    const result = await db.insert('leads', {
+      type: 'direct_join',
+      name,
+      store_name,
+      phone,
+      email,
+      biz_registration_url,
+      mailorder_cert_url,
+      bank_copy_url,
+      user_id,
+      password_hash: passwordHash,
+      status: '신규'
     });
 
-  if (error) {
-    console.error('Supabase upload error:', error);
-    throw error;
+    res.status(201).json({
+      success: true,
+      message: '입점 신청이 접수되었습니다. 서류 검토 후 연락드리겠습니다.',
+      leadId: result.id
+    });
+  } catch (error) {
+    console.error('Direct join submission error:', error);
+    res.status(500).json({
+      error: '입점 신청 중 오류가 발생했습니다.',
+      details: error.message
+    });
   }
-
-  // Get public URL
-  const { data: urlData } = supabase.storage
-    .from('documents')
-    .getPublicUrl(fileName);
-
-  return urlData.publicUrl;
-}
-
-// POST /api/leads/direct-join - Submit direct join application
-router.post('/direct-join',
-  upload.fields([
-    { name: 'biz_registration', maxCount: 1 },
-    { name: 'mailorder_cert', maxCount: 1 },
-    { name: 'bank_copy', maxCount: 1 }
-  ]),
-  directJoinValidation,
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
-
-      const { name, store_name, phone, email, user_id, password } = req.body;
-      const files = req.files;
-
-      // Check required files
-      if (!files.biz_registration || !files.mailorder_cert || !files.bank_copy) {
-        return res.status(400).json({
-          error: '필수 서류(사업자등록증, 통신판매신고증, 통장사본)를 모두 첨부해주세요.'
-        });
-      }
-
-      // Hash password
-      const salt = await bcrypt.genSalt(10);
-      const passwordHash = await bcrypt.hash(password, salt);
-
-      // Upload files to Supabase Storage
-      let bizRegUrl, mailorderUrl, bankCopyUrl;
-      try {
-        bizRegUrl = await uploadToSupabase(files.biz_registration[0], 'biz_registration');
-        mailorderUrl = await uploadToSupabase(files.mailorder_cert[0], 'mailorder_cert');
-        bankCopyUrl = await uploadToSupabase(files.bank_copy[0], 'bank_copy');
-      } catch (uploadError) {
-        console.error('File upload error:', uploadError);
-        return res.status(500).json({ error: '파일 업로드 중 오류가 발생했습니다.' });
-      }
-
-      const result = await db.insert('leads', {
-        type: 'direct_join',
-        name,
-        store_name,
-        phone,
-        email,
-        biz_registration_url: bizRegUrl,
-        mailorder_cert_url: mailorderUrl,
-        bank_copy_url: bankCopyUrl,
-        user_id,
-        password_hash: passwordHash,
-        status: '신규'
-      });
-
-      res.status(201).json({
-        success: true,
-        message: '입점 신청이 접수되었습니다. 서류 검토 후 연락드리겠습니다.',
-        leadId: result.id
-      });
-    } catch (error) {
-      console.error('Direct join submission error:', error);
-      res.status(500).json({ error: '입점 신청 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' });
-    }
-  }
-);
+});
 
 // ===== Admin Routes (Protected) =====
 
