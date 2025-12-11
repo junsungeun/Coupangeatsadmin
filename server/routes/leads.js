@@ -70,7 +70,11 @@ router.post('/consult', consultValidation, async (req, res) => {
     });
   } catch (error) {
     console.error('Consult submission error:', error);
-    res.status(500).json({ error: '문의 접수 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' });
+    res.status(500).json({
+      error: '문의 접수 중 오류가 발생했습니다.',
+      details: error.message,
+      code: error.code
+    });
   }
 });
 
