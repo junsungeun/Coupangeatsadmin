@@ -94,10 +94,23 @@ const AdminLeadList = () => {
         }
       });
 
-      const queryString = new URLSearchParams(params).toString();
-      window.location.href = `/api/leads/export?${queryString}`;
+      const response = await axios.get('/api/leads/export', {
+        params,
+        responseType: 'blob'
+      });
+
+      // Create download link
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `leads_export_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Export failed:', error);
+      alert('CSV 내보내기에 실패했습니다.');
     }
   };
 
