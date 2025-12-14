@@ -742,12 +742,12 @@ const Landing = () => {
                   {errors.email && <span className="error-text">{errors.email}</span>}
                 </div>
                 <div className="form-group">
-                  <label htmlFor="c_link">매장 링크 <span className="optional">(인스타/네이버지도 · 선택)</span></label>
+                  <label htmlFor="c_link">스마트스토어/자사몰 주소 <span className="optional">(선택)</span></label>
                   <input
                     type="text"
                     id="c_link"
                     name="store_link"
-                    placeholder="인스타그램 또는 네이버지도 링크"
+                    placeholder="스마트스토어 또는 자사몰 주소"
                     value={consultForm.store_link}
                     onChange={handleConsultChange}
                   />
