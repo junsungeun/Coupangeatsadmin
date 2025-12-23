@@ -35,6 +35,13 @@ const AdminLayout = () => {
             <span className="nav-icon">📋</span>
             리드 관리
           </NavLink>
+          <NavLink
+            to="/admin/users"
+            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+          >
+            <span className="nav-icon">👥</span>
+            관리자 계정
+          </NavLink>
         </nav>
 
         <div className="sidebar-footer">

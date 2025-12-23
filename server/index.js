@@ -6,6 +6,7 @@ const fs = require('fs');
 
 const leadsRoutes = require('./routes/leads');
 const adminRoutes = require('./routes/admin');
+const adminUsersRoutes = require('./routes/adminUsers');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -28,6 +29,7 @@ app.use('/uploads', express.static(uploadsDir));
 // API Routes
 app.use('/api/leads', leadsRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/admin-users', adminUsersRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

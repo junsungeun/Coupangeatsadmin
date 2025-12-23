@@ -6,6 +6,7 @@ import './AdminLeadList.css';
 const AdminLeadList = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [leads, setLeads] = useState([]);
+  const [adminUsers, setAdminUsers] = useState([]);
   const [pagination, setPagination] = useState({
     total: 0,
     page: 1,
@@ -18,12 +19,26 @@ const AdminLeadList = () => {
   const [filters, setFilters] = useState({
     type: searchParams.get('type') || 'all',
     status: searchParams.get('status') || 'all',
+    assigned_admin_id: searchParams.get('assigned_admin_id') || 'all',
     search: searchParams.get('search') || '',
     startDate: searchParams.get('startDate') || '',
     endDate: searchParams.get('endDate') || ''
   });
 
   const statusOptions = ['신규', '연락완료', '상담중', '입점진행', '입점완료', '보류', '이탈'];
+
+  // Fetch admin users for filter dropdown
+  useEffect(() => {
+    const fetchAdminUsers = async () => {
+      try {
+        const response = await axios.get('/api/admin/users');
+        setAdminUsers(response.data);
+      } catch (error) {
+        console.error('Failed to fetch admin users:', error);
+      }
+    };
+    fetchAdminUsers();
+  }, []);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -179,6 +194,20 @@ const AdminLeadList = () => {
           </div>
 
           <div className="filter-group">
+            <label>담당자</label>
+            <select
+              value={filters.assigned_admin_id}
+              onChange={(e) => handleFilterChange('assigned_admin_id', e.target.value)}
+            >
+              <option value="all">전체</option>
+              <option value="unassigned">미지정</option>
+              {adminUsers.map(admin => (
+                <option key={admin.id} value={admin.id}>{admin.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="filter-group">
             <label>시작일</label>
             <input
               type="date"
@@ -223,6 +252,7 @@ const AdminLeadList = () => {
                 <th>이름</th>
                 <th>매장명</th>
                 <th>연락처</th>
+                <th>담당자</th>
                 <th>상태</th>
                 <th>메모</th>
                 <th></th>
@@ -240,6 +270,11 @@ const AdminLeadList = () => {
                   <td className="name-cell">{lead.name}</td>
                   <td className="store-cell">{lead.store_name}</td>
                   <td className="phone-cell">{lead.phone}</td>
+                  <td className="admin-cell">
+                    <span className={`admin-badge ${lead.assigned_admin_name ? '' : 'unassigned'}`}>
+                      {lead.assigned_admin_name || '미지정'}
+                    </span>
+                  </td>
                   <td>
                     <span
                       className="status-badge"

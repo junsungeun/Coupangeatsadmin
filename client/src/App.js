@@ -6,6 +6,7 @@ import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminLeadList from './pages/AdminLeadList';
 import AdminLeadDetail from './pages/AdminLeadDetail';
+import AdminUserList from './pages/AdminUserList';
 import AdminLayout from './components/AdminLayout';
 
 // Protected route wrapper
@@ -40,6 +41,7 @@ function App() {
           <Route index element={<AdminDashboard />} />
           <Route path="leads" element={<AdminLeadList />} />
           <Route path="leads/:id" element={<AdminLeadDetail />} />
+          <Route path="users" element={<AdminUserList />} />
         </Route>
 
         {/* Catch all redirect */}

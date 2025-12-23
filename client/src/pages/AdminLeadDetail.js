@@ -7,6 +7,7 @@ const AdminLeadDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [lead, setLead] = useState(null);
+  const [adminUsers, setAdminUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -16,11 +17,25 @@ const AdminLeadDetail = () => {
   const [editForm, setEditForm] = useState({
     status: '',
     business_type: '',
-    memo: ''
+    memo: '',
+    assigned_admin_id: ''
   });
 
   const statusOptions = ['신규', '연락완료', '상담중', '입점진행', '입점완료', '보류', '이탈'];
   const businessTypeOptions = ['꽃집', '디저트', '문구', '반찬', '베이커리', '공방', '기타'];
+
+  // Fetch admin users for dropdown
+  useEffect(() => {
+    const fetchAdminUsers = async () => {
+      try {
+        const response = await axios.get('/api/admin/users');
+        setAdminUsers(response.data);
+      } catch (error) {
+        console.error('Failed to fetch admin users:', error);
+      }
+    };
+    fetchAdminUsers();
+  }, []);
 
   useEffect(() => {
     const fetchLead = async () => {
@@ -30,7 +45,8 @@ const AdminLeadDetail = () => {
         setEditForm({
           status: response.data.status || '',
           business_type: response.data.business_type || '',
-          memo: response.data.memo || ''
+          memo: response.data.memo || '',
+          assigned_admin_id: response.data.assigned_admin_id || ''
         });
       } catch (err) {
         setError('리드 정보를 불러오는데 실패했습니다.');
@@ -179,6 +195,12 @@ const AdminLeadDetail = () => {
               <label>수정일</label>
               <span>{formatDate(lead.updated_at)}</span>
             </div>
+            <div className="info-item">
+              <label>담당자</label>
+              <span className={`admin-info ${lead.assigned_admin_name ? '' : 'unassigned'}`}>
+                {lead.assigned_admin_name || '미지정'}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -260,6 +282,19 @@ const AdminLeadDetail = () => {
                   ))}
                 </select>
               </div>
+              <div className="form-group">
+                <label>담당자</label>
+                <select
+                  name="assigned_admin_id"
+                  value={editForm.assigned_admin_id}
+                  onChange={handleChange}
+                >
+                  <option value="">미지정</option>
+                  {adminUsers.map(admin => (
+                    <option key={admin.id} value={admin.id}>{admin.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div className="form-group full-width">
@@ -293,7 +328,7 @@ const AdminLeadDetail = () => {
               {lead.activityLogs.map((log, index) => (
                 <div key={index} className="activity-item">
                   <div className="activity-icon">
-                    {log.action === 'status_change' ? '🔄' : '📝'}
+                    {log.action === 'status_change' ? '🔄' : log.action === 'assigned_admin_change' ? '👤' : '📝'}
                   </div>
                   <div className="activity-content">
                     <div className="activity-text">
@@ -304,6 +339,12 @@ const AdminLeadDetail = () => {
                           <span className="new-value" style={{ color: getStatusColor(log.new_value) }}>
                             {log.new_value}
                           </span>
+                        </>
+                      ) : log.action === 'assigned_admin_change' ? (
+                        <>
+                          담당자 변경: <span className="old-value">{log.old_value}</span>
+                          {' → '}
+                          <span className="new-value">{log.new_value}</span>
                         </>
                       ) : (
                         '메모 수정'

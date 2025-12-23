@@ -31,7 +31,8 @@ const consultValidation = [
   body('name').trim().notEmpty().withMessage('이름을 입력해주세요.'),
   body('store_name').trim().notEmpty().withMessage('매장명을 입력해주세요.'),
   body('phone').trim().notEmpty().withMessage('연락처를 입력해주세요.'),
-  body('email').optional({ checkFalsy: true }).isEmail().withMessage('올바른 이메일 형식이 아닙니다.')
+  body('email').optional({ checkFalsy: true }).isEmail().withMessage('올바른 이메일 형식이 아닙니다.'),
+  body('assigned_admin_id').notEmpty().withMessage('담당자를 선택해주세요.')
 ];
 
 const directJoinValidation = [
@@ -40,7 +41,8 @@ const directJoinValidation = [
   body('phone').trim().notEmpty().withMessage('연락처를 입력해주세요.'),
   body('email').isEmail().withMessage('올바른 이메일 형식이 아닙니다.'),
   body('user_id').trim().notEmpty().withMessage('아이디를 입력해주세요.'),
-  body('password').isLength({ min: 6 }).withMessage('비밀번호는 6자 이상이어야 합니다.')
+  body('password').isLength({ min: 6 }).withMessage('비밀번호는 6자 이상이어야 합니다.'),
+  body('assigned_admin_id').optional()
 ];
 
 // POST /api/leads/consult - Submit consultation inquiry
@@ -51,7 +53,7 @@ router.post('/consult', consultValidation, async (req, res) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { name, store_name, phone, email, store_link } = req.body;
+    const { name, store_name, phone, email, store_link, assigned_admin_id } = req.body;
 
     const result = await db.insert('leads', {
       type: 'consult',
@@ -60,6 +62,7 @@ router.post('/consult', consultValidation, async (req, res) => {
       phone,
       email: email || null,
       store_link: store_link || null,
+      assigned_admin_id: assigned_admin_id || null,
       status: '신규'
     });
 
@@ -88,7 +91,8 @@ router.post('/direct-join', directJoinValidation, async (req, res) => {
 
     const {
       name, store_name, phone, email, user_id, password,
-      biz_registration_url, mailorder_cert_url, bank_copy_url
+      biz_registration_url, mailorder_cert_url, bank_copy_url,
+      assigned_admin_id
     } = req.body;
 
     // Check required file URL - only biz_registration is required
@@ -113,6 +117,7 @@ router.post('/direct-join', directJoinValidation, async (req, res) => {
       bank_copy_url: bank_copy_url || null,
       user_id,
       password_hash: passwordHash,
+      assigned_admin_id: assigned_admin_id || null,
       status: '신규'
     });
 
@@ -165,6 +170,7 @@ router.get('/', authenticateToken, async (req, res) => {
       search,
       startDate,
       endDate,
+      assigned_admin_id,
       page = 1,
       limit = 20,
       sortBy = 'created_at',
@@ -175,8 +181,13 @@ router.get('/', authenticateToken, async (req, res) => {
     const limitNum = parseInt(limit);
     const offset = (pageNum - 1) * limitNum;
 
-    // Build query
-    let query = supabase.from('leads').select('*', { count: 'exact' });
+    // Build query with admin_users join
+    let query = supabase
+      .from('leads')
+      .select(`
+        *,
+        admin_users:assigned_admin_id (id, name)
+      `, { count: 'exact' });
 
     // Apply filters
     if (type && type !== 'all') {
@@ -185,6 +196,14 @@ router.get('/', authenticateToken, async (req, res) => {
 
     if (status && status !== 'all') {
       query = query.eq('status', status);
+    }
+
+    if (assigned_admin_id && assigned_admin_id !== 'all') {
+      if (assigned_admin_id === 'unassigned') {
+        query = query.is('assigned_admin_id', null);
+      } else {
+        query = query.eq('assigned_admin_id', assigned_admin_id);
+      }
     }
 
     if (search) {
@@ -211,8 +230,14 @@ router.get('/', authenticateToken, async (req, res) => {
 
     if (error) throw error;
 
+    // Transform the data to flatten admin_users
+    const transformedLeads = leads.map(lead => ({
+      ...lead,
+      assigned_admin_name: lead.admin_users?.name || null
+    }));
+
     res.json({
-      leads,
+      leads: transformedLeads,
       pagination: {
         total: count,
         page: pageNum,
@@ -313,14 +338,25 @@ router.get('/export', authenticateToken, async (req, res) => {
 // GET /api/leads/:id - Get single lead
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
-    const lead = await db.getById('leads', req.params.id);
+    // Get lead with assigned admin info
+    const { data: lead, error: leadError } = await supabase
+      .from('leads')
+      .select(`
+        *,
+        admin_users:assigned_admin_id (id, name)
+      `)
+      .eq('id', req.params.id)
+      .single();
 
-    if (!lead) {
+    if (leadError || !lead) {
       return res.status(404).json({ error: '리드를 찾을 수 없습니다.' });
     }
 
     // Don't send password_hash to client
     delete lead.password_hash;
+
+    // Flatten admin_users
+    lead.assigned_admin_name = lead.admin_users?.name || null;
 
     // Get activity logs
     const { data: logs, error: logsError } = await supabase
@@ -351,21 +387,37 @@ router.get('/:id', authenticateToken, async (req, res) => {
 // PUT /api/leads/:id - Update lead
 router.put('/:id', authenticateToken, async (req, res) => {
   try {
-    const { status, business_type, memo } = req.body;
+    const { status, business_type, memo, assigned_admin_id } = req.body;
     const leadId = req.params.id;
 
-    // Get current lead
-    const currentLead = await db.getById('leads', leadId);
-    if (!currentLead) {
+    // Get current lead with admin info
+    const { data: currentLead, error: getError } = await supabase
+      .from('leads')
+      .select(`
+        *,
+        admin_users:assigned_admin_id (id, name)
+      `)
+      .eq('id', leadId)
+      .single();
+
+    if (getError || !currentLead) {
       return res.status(404).json({ error: '리드를 찾을 수 없습니다.' });
     }
 
-    // Update lead
-    const updatedLead = await db.update('leads', leadId, {
+    // Build update object
+    const updateData = {
       status: status || currentLead.status,
       business_type: business_type !== undefined ? business_type : currentLead.business_type,
       memo: memo !== undefined ? memo : currentLead.memo
-    });
+    };
+
+    // Handle assigned_admin_id update
+    if (assigned_admin_id !== undefined) {
+      updateData.assigned_admin_id = assigned_admin_id || null;
+    }
+
+    // Update lead
+    const updatedLead = await db.update('leads', leadId, updateData);
 
     // Log status change
     if (status && status !== currentLead.status) {
@@ -389,9 +441,44 @@ router.put('/:id', authenticateToken, async (req, res) => {
       });
     }
 
+    // Log assigned admin change
+    if (assigned_admin_id !== undefined && assigned_admin_id !== currentLead.assigned_admin_id) {
+      const oldAdminName = currentLead.admin_users?.name || '미지정';
+
+      // Get new admin name
+      let newAdminName = '미지정';
+      if (assigned_admin_id) {
+        const { data: newAdmin } = await supabase
+          .from('admin_users')
+          .select('name')
+          .eq('id', assigned_admin_id)
+          .single();
+        newAdminName = newAdmin?.name || '알 수 없음';
+      }
+
+      await db.insert('activity_logs', {
+        lead_id: leadId,
+        admin_id: req.user.id,
+        action: 'assigned_admin_change',
+        old_value: oldAdminName,
+        new_value: newAdminName
+      });
+    }
+
     delete updatedLead.password_hash;
 
-    res.json({ success: true, lead: updatedLead });
+    // Get updated admin name
+    let assigned_admin_name = null;
+    if (updatedLead.assigned_admin_id) {
+      const { data: admin } = await supabase
+        .from('admin_users')
+        .select('name')
+        .eq('id', updatedLead.assigned_admin_id)
+        .single();
+      assigned_admin_name = admin?.name || null;
+    }
+
+    res.json({ success: true, lead: { ...updatedLead, assigned_admin_name } });
   } catch (error) {
     console.error('Update lead error:', error);
     res.status(500).json({ error: '리드 수정 중 오류가 발생했습니다.' });

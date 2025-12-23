@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { uploadFile, supabase } from '../config/supabase';
 import './Landing.css';
@@ -9,13 +9,17 @@ const Landing = () => {
   const [message, setMessage] = useState({ type: '', text: '' });
   const [isComplete, setIsComplete] = useState(false);
 
+  // Admin users for dropdown
+  const [adminUsers, setAdminUsers] = useState([]);
+
   // Consult form state
   const [consultForm, setConsultForm] = useState({
     name: '',
     store_name: '',
     phone: '',
     email: '',
-    store_link: ''
+    store_link: '',
+    assigned_admin_id: ''
   });
 
   // Direct join form state
@@ -25,8 +29,22 @@ const Landing = () => {
     phone: '',
     email: '',
     user_id: '',
-    password: ''
+    password: '',
+    assigned_admin_id: ''
   });
+
+  // Fetch admin users on mount
+  useEffect(() => {
+    const fetchAdminUsers = async () => {
+      try {
+        const response = await axios.get('/api/admin-users/public');
+        setAdminUsers(response.data);
+      } catch (error) {
+        console.error('Failed to fetch admin users:', error);
+      }
+    };
+    fetchAdminUsers();
+  }, []);
   const [files, setFiles] = useState({
     biz_registration: null,
     mailorder_cert: null,
@@ -140,6 +158,9 @@ const Landing = () => {
     if (consultForm.email && !validateEmail(consultForm.email)) {
       newErrors.email = '이메일 형식이 올바르지 않습니다.';
     }
+    if (!consultForm.assigned_admin_id) {
+      newErrors.assigned_admin_id = '담당자를 선택해주세요.';
+    }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -155,7 +176,8 @@ const Landing = () => {
         store_name: '',
         phone: '',
         email: '',
-        store_link: ''
+        store_link: '',
+        assigned_admin_id: ''
       });
     } catch (error) {
       const errorMsg = error.response?.data?.errors?.[0]?.msg ||
@@ -277,7 +299,8 @@ const Landing = () => {
         phone: '',
         email: '',
         user_id: '',
-        password: ''
+        password: '',
+        assigned_admin_id: ''
       });
       setFiles({
         biz_registration: null,
@@ -752,6 +775,22 @@ const Landing = () => {
                     onChange={handleConsultChange}
                   />
                 </div>
+                <div className="form-group">
+                  <label htmlFor="c_admin">담당자 선택 <span className="required">*</span></label>
+                  <select
+                    id="c_admin"
+                    name="assigned_admin_id"
+                    value={consultForm.assigned_admin_id}
+                    onChange={handleConsultChange}
+                    className={errors.assigned_admin_id ? 'error' : ''}
+                  >
+                    <option value="">담당자를 선택해주세요</option>
+                    {adminUsers.map(admin => (
+                      <option key={admin.id} value={admin.id}>{admin.name}</option>
+                    ))}
+                  </select>
+                  {errors.assigned_admin_id && <span className="error-text">{errors.assigned_admin_id}</span>}
+                </div>
                 <button type="submit" className="form-submit" disabled={loading}>
                   {loading ? '처리 중...' : '무료 상담 요청하기'}
                 </button>
@@ -878,6 +917,20 @@ const Landing = () => {
                     className={errors.password ? 'error' : ''}
                   />
                   {errors.password && <span className="error-text">{errors.password}</span>}
+                </div>
+                <div className="form-group">
+                  <label htmlFor="j_admin">담당자 선택 <span className="optional">(선택)</span></label>
+                  <select
+                    id="j_admin"
+                    name="assigned_admin_id"
+                    value={joinForm.assigned_admin_id}
+                    onChange={handleJoinChange}
+                  >
+                    <option value="">담당자를 선택해주세요</option>
+                    {adminUsers.map(admin => (
+                      <option key={admin.id} value={admin.id}>{admin.name}</option>
+                    ))}
+                  </select>
                 </div>
                 <button type="submit" className="form-submit" disabled={loading}>
                   {loading ? '처리 중...' : '바로 입점 신청하기'}

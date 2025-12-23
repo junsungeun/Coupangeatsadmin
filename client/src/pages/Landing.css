@@ -779,9 +779,32 @@ body {
   box-shadow: 0 0 0 4px rgba(30, 128, 255, 0.1);
 }
 
-.form-group input.error {
+.form-group input.error,
+.form-group select.error {
   border-color: #ef4444;
   background-color: #fef2f2;
+}
+
+.form-group select {
+  width: 100%;
+  padding: 14px 16px;
+  background: #f8f9fa;
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 15px;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2364748b' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+}
+
+.form-group select:focus {
+  outline: none;
+  border-color: #1E80FF;
+  background-color: white;
+  box-shadow: 0 0 0 4px rgba(30, 128, 255, 0.1);
 }
 
 .form-group input[type="file"] {
