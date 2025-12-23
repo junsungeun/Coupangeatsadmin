@@ -27,10 +27,11 @@ app.get('/api/health', (req, res) => {
 });
 
 // Import routes
-let leadsRoutes, adminRoutes;
+let leadsRoutes, adminRoutes, adminUsersRoutes;
 try {
   leadsRoutes = require('../server/routes/leads');
   adminRoutes = require('../server/routes/admin');
+  adminUsersRoutes = require('../server/routes/adminUsers');
 } catch (err) {
   console.error('Route import error:', err);
 }
@@ -38,10 +39,11 @@ try {
 // API Routes
 if (leadsRoutes) app.use('/api/leads', leadsRoutes);
 if (adminRoutes) app.use('/api/admin', adminRoutes);
+if (adminUsersRoutes) app.use('/api/admin-users', adminUsersRoutes);
 
 // Root API
 app.get('/api', (req, res) => {
-  res.json({ message: 'Coupang Eats Admin API', routes: { leads: !!leadsRoutes, admin: !!adminRoutes } });
+  res.json({ message: 'Coupang Eats Admin API', routes: { leads: !!leadsRoutes, admin: !!adminRoutes, adminUsers: !!adminUsersRoutes } });
 });
 
 // Error handler
